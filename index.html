@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AI Avatar - Communication Interface</title>
+  <style>
+    body { 
+      background: #232323; 
+      color: #fff; 
+      font-family: Arial, sans-serif;
+      display: flex; 
+      flex-direction: column; 
+      align-items: center; 
+      padding: 20px;
+    }
+    .container { max-width: 800px; text-align: center; }
+    button { 
+      margin: 10px; 
+      padding: 15px 30px; 
+      font-size: 1.1em; 
+      border: none; 
+      border-radius: 8px; 
+      background: #4CAF50; 
+      color: white; 
+      cursor: pointer;
+    }
+    button:disabled { background: #666; cursor: not-allowed; }
+    #avatar { 
+      border: 3px solid #4CAF50; 
+      border-radius: 15px; 
+      width: 480px; 
+      height: 360px; 
+      margin: 20px auto;
+      display: block;
+    }
+    .status { 
+      margin: 20px 0; 
+      padding: 15px; 
+      background: #333; 
+      border-radius: 8px;
+      border-left: 4px solid #4CAF50;
+    }
+    .error { border-left-color: #f44336; background: #4a1f1f; }
+    .success { border-left-color: #4CAF50; background: #1f4a1f; }
+    .conversation { 
+      margin: 20px 0; 
+      padding: 20px; 
+      background: #2a2a2a; 
+      border-radius: 8px; 
+      text-align: left;
+      display: none;
+    }
+    .text-input { 
+      margin: 20px 0; 
+      padding: 20px; 
+      background: #333; 
+      border-radius: 8px;
+      display: none;
+    }
+    .text-input input { 
+      width: 70%; 
+      padding: 12px; 
+      border: 1px solid #555; 
+      border-radius: 5px; 
+      background: #222; 
+      color: #fff; 
+      font-size: 1em;
+    }
+    .processing {
+      margin: 20px 0;
+      padding: 20px;
+      background: #2d4a2d;
+      border-radius: 8px;
+      display: none;
+      text-align: center;
+    }
+    .spinner {
+      border: 4px solid #555;
+      border-top: 4px solid #4CAF50;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 15px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .debug-log {
+      margin: 20px 0;
+      padding: 15px;
+      background: #1a1a1a;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 0.9em;
+      text-align: left;
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid #555;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>AI Avatar Communication Interface</h1>
+    
+    <div class="status" id="configStatus">
+      <div>Loading configuration...</div>
+    </div>
+    
+    <video id="avatar" controls playsinline>
+      <source src="avatar_sample_green.mp4" type="video/mp4">
+    </video>
+    
+    <div class="processing" id="processingIndicator">
+      <div class="spinner"></div>
+      <div><strong>Backend is processing...</strong></div>
+      <div style="margin-top: 10px; font-size: 0.9em; color: #ccc;">
+        Enhanced debugging enabled - detailed logs available<br>
+        Extended timeout: 60 seconds for thorough processing
+      </div>
+    </div>
+    
+    <div class="controls">
+      <button id="voiceBtn" disabled>Voice Input</button>
+      <button id="typeBtn" disabled>Type Question</button>
+      <button id="testBtn" disabled>Test WebSocket</button>
+    </div>
+    
+    <div class="text-input" id="textInputSection">
+      <h3>Type Your Question</h3>
+      <input type="text" id="questionInput" placeholder="Ask me anything..." maxlength="80">
+      <button onclick="submitQuestion()">Send</button>
+      <button onclick="hideTextInput()">Cancel</button>
+    </div>
+    
+    <div class="status" id="statusDisplay">
+      <div id="statusText">Initializing...</div>
+    </div>
+    
+    <div class="conversation" id="conversationPanel">
+      <div style="color: #64B5F6; margin-bottom: 15px;" id="userMessage"></div>
+      <div style="color: #81C784;" id="aiMessage"></div>
+    </div>
+    
+    <div class="debug-log" id="debugLog">
+      <div style="color: #888; margin-bottom: 10px;">Debug Log:</div>
+    </div>
+  </div>
+
+
+  <script>
+    let config = { apiKey: '' };
+    let isProcessing = false;
+    let recognition = null;
+
+    const elements = {
+      configStatus: document.getElementById('configStatus'),
+      avatar: document.getElementById('avatar'),
+      processingIndicator: document.getElementById('processingIndicator'),
+      voiceBtn: document.getElementById('voiceBtn'),
+      typeBtn: document.getElementById('typeBtn'),
+      testBtn: document.getElementById('testBtn'),
+      textInputSection: document.getElementById('textInputSection'),
+      questionInput: document.getElementById('questionInput'),
+      statusDisplay: document.getElementById('statusDisplay'),
+      statusText: document.getElementById('statusText'),
+      conversationPanel: document.getElementById('conversationPanel'),
+      userMessage: document.getElementById('userMessage'),
+      aiMessage: document.getElementById('aiMessage'),
+      debugLog: document.getElementById('debugLog')
+    };
+
+    function log(message) {
+      const timestamp = new Date().toLocaleTimeString();
+      console.log(`[${timestamp}] ${message}`);
+      
+      // Add to debug log UI
+      const logEntry = document.createElement('div');
+      logEntry.style.color = '#ccc';
+      logEntry.style.marginBottom = '5px';
+      logEntry.textContent = `[${timestamp}] ${message}`;
+      elements.debugLog.appendChild(logEntry);
+      
+      // Keep only last 20 log entries
+      while (elements.debugLog.children.length > 21) { // +1 for header
+        elements.debugLog.removeChild(elements.debugLog.children[1]);
+      }
+      
+      // Auto-scroll to bottom
+      elements.debugLog.scrollTop = elements.debugLog.scrollHeight;
+    }
+
+    function updateStatus(message, type = 'info') {
+      elements.statusText.textContent = message;
+      elements.statusDisplay.className = `status ${type}`;
+      log(message);
+    }
+
+    function showProcessing(show) {
+      elements.processingIndicator.style.display = show ? 'block' : 'none';
+    }
+
+    function resetButtons() {
+      elements.voiceBtn.disabled = false;
+      elements.typeBtn.disabled = false;
+      elements.testBtn.disabled = false;
+      elements.voiceBtn.textContent = 'Voice Input';
+      isProcessing = false;
+      showProcessing(false);
+    }
+
+    // Speech recognition initialization
+    function initializeSpeechRecognition() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) return null;
+
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+      return recognition;
+    }
+
+    // Voice input
+    async function startVoiceInput() {
+      if (!recognition) {
+        throw new Error('Speech recognition not supported. Use Chrome browser.');
+      }
+
+      try {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        elements.voiceBtn.disabled = true;
+        elements.voiceBtn.textContent = 'Listening...';
+        updateStatus('Listening. Please speak clearly.');
+
+        return new Promise((resolve, reject) => {
+          let timeout = setTimeout(() => {
+            recognition.stop();
+            reject(new Error('Speech timeout. Please try again.'));
+          }, 8000);
+
+          recognition.onresult = (event) => {
+            clearTimeout(timeout);
+            const transcript = event.results[0][0].transcript.trim();
+            resolve(transcript);
+          };
+
+          recognition.onerror = (event) => {
+            clearTimeout(timeout);
+            reject(new Error(`Speech error: ${event.error}`));
+          };
+
+          recognition.start();
+        });
+      } catch (error) {
+        throw new Error('Microphone access denied.');
+      }
+    }
+
+    // Load configuration
+    async function loadConfig() {
+      try {
+        updateStatus('Connecting to backend...');
+        
+        const response = await fetch('http://localhost:8001/api/config');
+        if (!response.ok) {
+          throw new Error(`Backend error: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        config.apiKey = data.openai_api_key;
+        
+        elements.configStatus.innerHTML = `
+          <div>Backend connected - Enhanced debugging v1.1</div>
+          <div>API Key: ${data.masked_key}</div>
+          <div>Extended timeout: 60 seconds</div>
+        `;
+        elements.configStatus.className = 'status success';
+        
+        elements.voiceBtn.disabled = false;
+        elements.typeBtn.disabled = false;
+        elements.testBtn.disabled = false;
+        
+        updateStatus('System ready. Full debugging enabled.', 'success');
+        
+      } catch (error) {
+        elements.configStatus.innerHTML = `
+          <div>Backend connection failed</div>
+          <div>${error.message}</div>
+        `;
+        elements.configStatus.className = 'status error';
+        updateStatus('Configuration failed', 'error');
+      }
+    }
+
+    // Test WebSocket connection
+    async function testWebSocket() {
+      try {
+        updateStatus('Testing WebSocket connection...');
+        
+        const ws = new WebSocket('ws://localhost:8001/ws/test');
+        
+        return new Promise((resolve, reject) => {
+          let timeout = setTimeout(() => {
+            ws.close();
+            reject(new Error('WebSocket test timeout'));
+          }, 10000);
+          
+          ws.onopen = () => {
+            log('Test WebSocket connected');
+            ws.send('Test message from frontend');
+          };
+          
+          ws.onmessage = (event) => {
+            clearTimeout(timeout);
+            log(`Test response: ${event.data}`);
+            ws.close();
+            updateStatus('WebSocket test successful.', 'success');
+            resolve();
+          };
+          
+          ws.onerror = (error) => {
+            clearTimeout(timeout);
+            reject(new Error('WebSocket test failed'));
+          };
+          
+          ws.onclose = (event) => {
+            if (event.code !== 1000) {
+              clearTimeout(timeout);
+              reject(new Error(`WebSocket test closed: ${event.code}`));
+            }
+          };
+        });
+        
+      } catch (error) {
+        updateStatus(`WebSocket test failed: ${error.message}`, 'error');
+        throw error;
+      }
+    }
+
+    // ChatGPT API call
+    async function getChatGPTResponse(question) {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.apiKey}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-3.5-turbo',
+          messages: [
+            {
+              role: 'system',
+              content: 'Keep responses under 50 words for faster processing.'
+            },
+            {
+              role: 'user',
+              content: question
+            }
+          ],
+          max_tokens: 80,
+          temperature: 0.7
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`ChatGPT API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.choices[0].message.content.trim();
+    }
+
+    // Create TTS audio
+    async function createTTSAudio(text) {
+      updateStatus('Generating voice audio...');
+      
+      const response = await fetch('https://api.openai.com/v1/audio/speech', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.apiKey}`
+        },
+        body: JSON.stringify({
+          model: 'tts-1',
+          input: text,
+          voice: 'alloy',
+          response_format: 'wav'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`TTS API error: ${response.status}`);
+      }
+
+      return await response.blob();
+    }
+
+    async function processLipsync(avatarBlob, audioBlob) {
+      return new Promise(async (resolve, reject) => {
+        try {
+          updateStatus('Preparing data for backend...');
+          showProcessing(true);
+          
+          const avatarBuffer = await avatarBlob.arrayBuffer();
+          const audioBuffer = await audioBlob.arrayBuffer();
+          
+          const avatarNameBytes = new TextEncoder().encode('avatar_sample_green.mp4');
+          const audioNameBytes = new TextEncoder().encode('response.wav');
+          
+          const totalSize = 4 + avatarNameBytes.length + 8 + avatarBuffer.byteLength + 
+                           4 + audioNameBytes.length + 8 + audioBuffer.byteLength;
+          
+          const combinedMessage = new ArrayBuffer(totalSize);
+          const view = new DataView(combinedMessage);
+          const uint8View = new Uint8Array(combinedMessage);
+          
+          let offset = 0;
+          
+          // Avatar filename length (big-endian)
+          view.setUint32(offset, avatarNameBytes.length, false);
+          offset += 4;
+          uint8View.set(avatarNameBytes, offset);
+          offset += avatarNameBytes.length;
+          // Avatar size (big-endian)
+          const avatarSizeBuffer = new ArrayBuffer(8);
+          const avatarSizeView = new DataView(avatarSizeBuffer);
+          avatarSizeView.setBigUint64(0, BigInt(avatarBuffer.byteLength), false);
+          uint8View.set(new Uint8Array(avatarSizeBuffer), offset);
+          offset += 8;
+          uint8View.set(new Uint8Array(avatarBuffer), offset);
+          offset += avatarBuffer.byteLength;
+          // Audio filename length (big-endian)
+          view.setUint32(offset, audioNameBytes.length, false);
+          offset += 4;
+          uint8View.set(audioNameBytes, offset);
+          offset += audioNameBytes.length;
+          // Audio size (big-endian)
+          const audioSizeBuffer = new ArrayBuffer(8);
+          const audioSizeView = new DataView(audioSizeBuffer);
+          audioSizeView.setBigUint64(0, BigInt(audioBuffer.byteLength), false);
+          uint8View.set(new Uint8Array(audioSizeBuffer), offset);
+          offset += 8;
+          uint8View.set(new Uint8Array(audioBuffer), offset);
+          
+          updateStatus('Connecting to WebSocket...');
+          const ws = new WebSocket('ws://localhost:8001/ws/lipsync-single');
+          ws.binaryType = 'arraybuffer';
+          
+          let chunks = [];
+          let expectedSize = null;
+          let startTime = Date.now();
+          
+          ws.onopen = () => {
+            log('WebSocket connected');
+            updateStatus('Sending binary data to backend...');
+            try {
+              ws.send(combinedMessage);
+              log(`Sent: ${combinedMessage.byteLength} bytes with big-endian format`);
+              updateStatus('Backend processing. Please wait...');
+            } catch (error) {
+              log(`Error sending data: ${error.message}`);
+              throw error;
+            }
+          };
+          
+          ws.onmessage = (event) => {
+            if (typeof event.data === 'string') {
+              log(`Backend message: ${event.data}`);
+              
+              if (event.data.startsWith('ERROR')) {
+                showProcessing(false);
+                reject(new Error(event.data));
+                return;
+              }
+              
+              expectedSize = parseInt(event.data);
+              chunks = [];
+              log(`Expecting video file: ${expectedSize} bytes`);
+              updateStatus(`Receiving processed video (${Math.round(expectedSize/1024)}KB)...`);
+              
+            } else {
+              // Binary video data
+              chunks.push(new Uint8Array(event.data));
+              const received = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+              log(`Received chunk: ${event.data.byteLength} bytes (${received}/${expectedSize})`);
+              
+              if (expectedSize && received >= expectedSize) {
+                const processingTime = Math.round((Date.now() - startTime) / 1000);
+                showProcessing(false);
+                log(`Video received completely in ${processingTime} seconds`);
+                
+                const videoBlob = new Blob(chunks, { type: 'video/mp4' });
+                const videoUrl = URL.createObjectURL(videoBlob);
+                log('Playing lip-synced result...');
+                
+                // Play the result
+                elements.avatar.src = videoUrl;
+                elements.avatar.loop = false;
+                elements.avatar.muted = false;
+                elements.avatar.controls = true;
+                
+                elements.avatar.play().then(() => {
+                  updateStatus(`Success. Processed in ${processingTime} seconds.`, 'success');
+                  log('Playback started successfully');
+                }).catch(error => {
+                  log(`Playback error: ${error.message}`);
+                  reject(new Error(`Playback failed: ${error.message}`));
+                });
+                
+                // Reset when finished
+                elements.avatar.onended = () => {
+                  elements.avatar.src = 'avatar_sample_green.mp4';
+                  elements.avatar.loop = true;
+                  elements.avatar.muted = true;
+                  elements.avatar.controls = false;
+                  elements.avatar.play();
+                  
+                  updateStatus('Ready for next question.', 'success');
+                  resetButtons();
+                  URL.revokeObjectURL(videoUrl);
+                  log('Reset to default avatar');
+                };
+                
+                ws.close();
+                resolve();
+              }
+            }
+          };
+          
+          ws.onerror = (error) => {
+            log(`WebSocket error: ${error}`);
+            showProcessing(false);
+            reject(new Error('WebSocket connection failed'));
+          };
+          
+          ws.onclose = (event) => {
+            log(`WebSocket closed: code ${event.code}, reason: ${event.reason}`);
+            if (event.code !== 1000 && chunks.length === 0) {
+              showProcessing(false);
+              reject(new Error(`Connection closed unexpectedly: ${event.code}`));
+            }
+          };
+          
+        } catch (error) {
+          log(`Processing error: ${error.message}`);
+          showProcessing(false);
+          reject(error);
+        }
+      });
+    }
+
+    // Main processing pipeline
+    async function processQuestion(question) {
+      if (isProcessing) return;
+      
+      try {
+        isProcessing = true;
+        elements.voiceBtn.disabled = true;
+        elements.typeBtn.disabled = true;
+        elements.testBtn.disabled = true;
+        
+        elements.userMessage.textContent = `You asked: "${question}"`;
+        elements.conversationPanel.style.display = 'block';
+        
+        updateStatus('Processing with ChatGPT...');
+        const aiResponse = await getChatGPTResponse(question);
+        elements.aiMessage.textContent = `AI responds: "${aiResponse}"`;
+        log(`AI response: "${aiResponse}"`);
+        
+        const audioBlob = await createTTSAudio(aiResponse);
+        log(`TTS audio generated: ${audioBlob.size} bytes`);
+        
+        updateStatus('Loading avatar...');
+        const avatarResponse = await fetch('avatar_sample_green.mp4');
+        const avatarBlob = await avatarResponse.blob();
+        log(`Avatar loaded: ${avatarBlob.size} bytes`);
+        
+        await processLipsync(avatarBlob, audioBlob);
+        
+      } catch (error) {
+        log(`Pipeline error: ${error.message}`);
+        updateStatus(`Error: ${error.message}`, 'error');
+        resetButtons();
+      }
+    }
+
+    // Event handlers
+    elements.voiceBtn.onclick = async () => {
+      try {
+        const question = await startVoiceInput();
+        await processQuestion(question);
+      } catch (error) {
+        updateStatus(`Voice failed: ${error.message}`, 'error');
+        resetButtons();
+      }
+    };
+
+    elements.typeBtn.onclick = () => {
+      elements.textInputSection.style.display = 'block';
+      elements.questionInput.focus();
+    };
+
+    elements.testBtn.onclick = async () => {
+      try {
+        await testWebSocket();
+      } catch (error) {
+        updateStatus(`Test failed: ${error.message}`, 'error');
+      }
+    };
+
+    elements.questionInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') submitQuestion();
+    });
+
+    function submitQuestion() {
+      const question = elements.questionInput.value.trim();
+      if (!question) return;
+      
+      hideTextInput();
+      processQuestion(question);
+    }
+
+    function hideTextInput() {
+      elements.textInputSection.style.display = 'none';
+      elements.questionInput.value = '';
+    }
+
+    // Initialize
+    window.addEventListener('load', () => {
+      initializeSpeechRecognition();
+      loadConfig();
+    });
+  </script>
+</body>
+</html>
