@@ -1,239 +1,140 @@
-Here is your updated `README.md` with all recent changes, including the addition of `file_manager.py` and `windows_config.py`, removal of all emojis, and improved formatting for clarity and professionalism:
+# AI Avatar Lip Sync System
 
-```markdown
-# Real-Time AI Avatar Lip Sync System
+This project integrates ChatGPT responses with a real-time lip-sync video generation system. It allows users to interact with an AI assistant via text or voice, with the avatar responding in synchronized speech and lip movements.
 
-This project is a real-time, end-to-end AI avatar pipeline that allows users to input speech or text via a web frontend, generate smart responses using OpenAI's ChatGPT API, convert them to speech using OpenAI TTS, and synchronize the audio onto a talking avatar using Wav2Lip. All communication is handled through an optimized WebSocket protocol for near real-time interaction.
+## Features
+
+* Real-time AI responses (ChatGPT/OpenAI)
+* Text-to-Speech (TTS) conversion
+* Lip-sync video generation using Wav2Lip
+* Audio chunk streaming to reduce latency
+* Model warm-up for faster response times
+* File manager to upload video clips for lip sync
+* WebSocket support for real-time communication
+
+## Tech Stack
+
+* **Backend**: FastAPI, WebSockets, Wav2Lip, PyTorch
+* **Frontend**: HTML, JavaScript, WebSocket, MediaRecorder
+* **Models**: Wav2Lip, S3FD Face Detector
+* **TTS**: Edge-TTS (can be swapped)
 
 ---
 
-## Project Structure
+## Directory Structure
 
 ```
-
-project-root/
-│
-├── client\_web/                   # Frontend (static web client)
-│   ├── index.html                # Main UI with JavaScript & CSS
-│   └── ...                       # Supporting JS, CSS, assets
-│
-├── wav2lip\_ws\_server/
-│   └── gradio-lipsync-wav2lip/   # Backend + ML pipeline
-│       ├── server.py             # WebSocket + FastAPI backend
-│       ├── inference.py          # Wav2Lip + TTS + response logic
-│       ├── file\_manager.py       # Utility for file chunking and sync
-│       ├── windows\_config.py     # Optional system cleanup script (Windows only)
-│       ├── requirements.txt      # Python dependencies
-│       ├── .env.example          # Example environment config
-│       ├── face\_detection/       # Wav2Lip face detection module
-│       └── wav2lip.pth           # Pretrained model weights
-│
-├── whisper.cpp/                 # (Optional) Offline STT engine
-│   ├── main, models, etc.
-│
-├── README.md                    # Project documentation
-└── .gitignore                   # Ignore large or sensitive files
-
-````
-
----
-
-## Frontend
-
-**Location:** `client_web/`
-
-The frontend consists of a minimal HTML/JavaScript interface that captures user voice or text input and communicates with the backend via WebSocket.
-
-- `index.html` provides the interactive UI
-- Uses Web APIs (Web Speech API, MediaRecorder, AudioContext)
-- Sends text/audio to backend and renders received video
-
-**How to Run:**
-
-```bash
-cd client_web
-python -m http.server 8080
-````
-
-Open your browser and navigate to:
-`http://localhost:8080`
-
----
-
-## Backend
-
-**Location:** `wav2lip_ws_server/gradio-lipsync-wav2lip/`
-
-Responsible for:
-
-* Parsing and handling WebSocket connections
-* Communicating with OpenAI GPT and TTS APIs
-* Generating lip-synced video using Wav2Lip
-* Chunking responses and streaming to frontend
-
-### Backend Setup
-
-1. Clone the base project or Hugging Face Space:
-
-```bash
-git clone https://huggingface.co/spaces/banao-tech/gradio-lipsync-wav2lip
+├── app
+│   ├── main.py                # FastAPI backend with WebSocket support
+│   ├── windows_config.py      # Windows-specific model and path configurations
+│   ├── wav2lip_models         # Wav2Lip model definitions
+│   ├── face_detection         # Face detector using S3FD
+│   ├── audio.py               # Audio preprocessing and mel-spectrogram conversion
+│   └── file_manager.py        # File handling and video uploads
+├── static
+│   ├── index.html             # Frontend interface
+│   └── ...                    # Other static assets
+├── requirements.txt
+└── README.md
 ```
 
-2. Add or replace files:
+---
 
-* Replace `inference.py` with custom logic
-* Add `server.py` for FastAPI + WebSocket support
-* Add `file_manager.py` to support chunk-based streaming
-* Add `windows_config.py` (optional utility for developers)
+## Installation
 
-3. Install dependencies:
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/your-username/ai-avatar-lipsync.git
+cd ai-avatar-lipsync
+```
+
+### 2. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-4. Set environment variables:
+Make sure you have:
+
+* Python 3.8+
+* FFmpeg installed and in PATH
+* `torch` with CUDA support (if using GPU)
+
+### 3. Download Pretrained Models
+
+Place the following files:
+
+* `wav2lip.pth` in `app/wav2lip_models/checkpoints`
+* `s3fd.pth` in `app/face_detection/detection/sfd`
+
+Download links (official):
+
+* Wav2Lip model: [https://github.com/Rudrabha/Wav2Lip](https://github.com/Rudrabha/Wav2Lip)
+* S3FD Face Detector: [https://github.com/clcarwin/s3fd](https://github.com/clcarwin/s3fd)
+
+---
+
+## Running the Application
+
+### Start Backend Server
 
 ```bash
-cp .env.example .env
-# Then edit .env with your keys
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 ```
 
-5. Start backend server:
+### Open Frontend
 
-```bash
-python server.py
-```
-
-Access it at:
-`http://localhost:8001`
+Open `static/index.html` in a browser. Use microphone or text to start a conversation.
 
 ---
 
-## Windows Utilities
+## How It Works
 
-**File:** `windows_config.py`
-This is a Windows-specific utility script to clean up temporary files, cache folders, and unused models. It supports parallel deletion, logging, dry-run mode, and orphaned pip package cleanup.
+1. User speaks or types a message.
+2. Message is sent to backend via WebSocket.
+3. Backend performs:
 
-Run it manually as needed:
+   * Transcription (if voice)
+   * AI response (ChatGPT)
+   * TTS conversion
+   * Streaming audio chunks to Wav2Lip for lip sync
+4. Final video is sent back to frontend.
 
-```bash
-python windows_config.py --delete-models --delete-orphan-pip --log cleanup.txt
-```
+### Wav2Lip Pipeline (Optimized)
 
-Useful for developers working with large models, environments, or long sessions on Windows.
-
----
-
-## File Streaming
-
-**File:** `file_manager.py`
-Used by the backend to:
-
-* Split WAV and video output into chunks
-* Enable real-time streaming of audio/video to frontend
-* Smoothly deliver output over WebSocket while it's being processed
+* **Model Preloading**: All models (face detector, encoders, decoder) are loaded once at server startup.
+* **Chunk-based Audio Handling**: TTS audio is streamed in chunks to speech encoder and synced with video.
 
 ---
 
-## Whisper.cpp (Optional STT)
+## Windows Notes
 
-To use offline transcription:
-
-```bash
-git clone https://github.com/ggerganov/whisper.cpp
-cd whisper.cpp
-make
-```
-
-Can be used in place of browser’s speech recognition for voice input processing.
+* `windows_config.py` includes special fixes for paths, subprocess handling, and multiprocessing issues on Windows.
+* Ensure correct `ffmpeg` path is set if not in system path.
 
 ---
 
-## Python Dependencies
+## File Manager Support
 
-Listed in `requirements.txt`. Core libraries include:
-
-```
-fastapi
-uvicorn
-websockets
-python-dotenv
-torch
-torchvision
-torchaudio
-librosa
-numpy
-opencv-python
-aiofiles
-aiohttp
-soundfile
-requests
-```
+* Upload a video clip using the file manager UI.
+* The backend will apply lip-sync generation using TTS audio or uploaded speech.
 
 ---
 
-## Environment File
+## TODO
 
-`.env.example`
-
-```env
-OPENAI_API_KEY=your_openai_api_key
-HF_TOKEN=your_huggingface_token
-```
+* Add support for GPU batch inference
+* Improve latency using async video encoding
+* Add avatar face overlay with chroma-key blending
+* Deploy with Docker (optional)
 
 ---
 
-## .gitignore
+## License
 
-```
-*.pth
-*.mp4
-*.wav
-*.avi
-*.h5
-*.log
-venv/
-__pycache__/
-.env
-.DS_Store
-```
+MIT License
 
 ---
 
-## Testing
-
-* Use text input to trigger GPT + TTS + video generation
-* Use voice input via browser mic to test end-to-end pipeline
-* Confirm streaming video is rendered on frontend
-* Check WebSocket logs for chunk sync and timing
-
----
-
-## Known Issues
-
-* Audio input with high latency or silence may break flow
-* Lip sync quality depends on avatar resolution and preprocessing
-* Video latency ranges from 10 to 15 seconds on average
-* Limited browser support for MediaRecorder API on iOS
-
----
-
-## Future Enhancements
-
-* Improve WebSocket audio buffer handling
-* Add avatar emotion control via GPT prompt injection
-* Integrate more TTS voices with expressiveness
-* Support for avatars with different face geometries
-* Deploy backend on GPU-supported cloud server for scalability
-
----
-
-## Support
-
-For issues, contributions, or bugs, open a GitHub issue or contact the project maintainer.
-
-```
-
-Let me know if you'd like this saved as a file or converted into a `README.txt` version for internal docs.
-```
+##
