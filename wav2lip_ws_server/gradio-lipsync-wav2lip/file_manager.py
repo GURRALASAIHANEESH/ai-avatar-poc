@@ -22,7 +22,7 @@ class WindowsFileManager:
             if not os.path.exists(file_path):
                 return True
             
-            # Method 1: Wait and retry
+            # Method 1: Wait and try
             for attempt in range(max_attempts):
                 try:
                     # Test if file is accessible
